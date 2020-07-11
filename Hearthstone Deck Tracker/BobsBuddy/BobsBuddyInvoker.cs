@@ -15,6 +15,7 @@ using Hearthstone_Deck_Tracker.Utility.Logging;
 using static HearthDb.CardIds;
 using static Hearthstone_Deck_Tracker.BobsBuddy.BobsBuddyUtils;
 using BobsBuddy.Simulation;
+using System.Windows.Forms.VisualStyles;
 
 namespace Hearthstone_Deck_Tracker.BobsBuddy
 {
@@ -356,7 +357,14 @@ namespace Hearthstone_Deck_Tracker.BobsBuddy
 					$"(Lethal={_output.theirDeathRate * 100}%), " +
 					$"TieRate={_output.tieRate * 100}%, " +
 					$"LossRate={_output.lossRate * 100}% " +
-					$"(Lethal={_output.myDeathRate * 100}%)");
+					$"(Lethal={_output.myDeathRate * 100}%)" +
+					$"(MedianDamage={_output.medianDamage})");
+
+				List<double> damages = _output.results.Select(r => r.avDamage).ToList<double>();
+				damages.Sort();
+
+				DebugLog(damages.ToString());
+
 				DebugLog("----- End of Output -----");
 
 				return _output;
