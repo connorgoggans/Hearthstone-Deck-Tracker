@@ -41,8 +41,11 @@ namespace Hearthstone_Deck_Tracker.Utility.Analytics
 		}
 
 		private const int MaxBobsBuddyEvents = 10;
+		private const int MaxBobsBuddyExceptions = 1;
 		private static int BobsBuddyEventsSent;
+		private static int BobsBuddyExceptionsSent;
 		private static Queue<SentryEvent> BobsBuddyEvents = new Queue<SentryEvent>();
+
 		public static void QueueBobsBuddyTerminalCase(TestInput testInput, TestOutput output, string result, int turn, List<string> debugLog)
 		{
 			if(BobsBuddyEventsSent >= MaxBobsBuddyEvents)
@@ -50,7 +53,6 @@ namespace Hearthstone_Deck_Tracker.Utility.Analytics
 			// Clean up data
 			testInput.RemoveSelfReferencesFromMinions();
 			output.ClearListsForReporting(); //ignoring for some temporary debugging
-			output.results.Clear();
 
 			var msg = new SentryMessage($"BobsBuddy {BobsBuddyUtils.VersionString}: Incorrect Terminal Case: {result}");
 
@@ -64,7 +66,7 @@ namespace Hearthstone_Deck_Tracker.Utility.Analytics
 				ExitCondition = output.myExitCondition.ToString(),
 				Input = testInput,
 				Output = output,
-				Log = debugLog
+				Log = ReverseAndClone(debugLog)
 			};
 
 			var bbEvent = new SentryEvent(msg)
@@ -85,7 +87,7 @@ namespace Hearthstone_Deck_Tracker.Utility.Analytics
 			{
 				if(BobsBuddyEventsSent >= MaxBobsBuddyEvents)
 				{
-					BobsBuddyEvents.Clear();
+					ClearBobsBuddyEvents();
 					break;
 				}
 				var e = BobsBuddyEvents.Dequeue();
@@ -94,6 +96,44 @@ namespace Hearthstone_Deck_Tracker.Utility.Analytics
 				BobsBuddyEventsSent++;
 			}
 		}
+
+		public static void CaptureBobsBuddyException(Exception ex, TestInput input, int turn, List<string> debugLog)
+		{
+			if(BobsBuddyExceptionsSent >= MaxBobsBuddyExceptions)
+				return;
+			BobsBuddyExceptionsSent++;
+
+			// Clean up data
+			input.RemoveSelfReferencesFromMinions();
+			var data = new BobsBuddyData()
+			{
+				ShortId = "",
+				Turn = turn,
+				ThreadCount = BobsBuddyInvoker.ThreadCount,
+				Input = input,
+				Log = ReverseAndClone(debugLog)
+			};
+
+			var bbEvent = new SentryEvent(ex)
+			{
+				Level = ErrorLevel.Warning,
+				Extra = data,
+			};
+
+			bbEvent.Message = $"BobsBuddy {BobsBuddyUtils.VersionString}: {bbEvent.Message}";
+			bbEvent.Fingerprint.Add(BobsBuddyUtils.VersionString);
+
+			BobsBuddyEvents.Enqueue(bbEvent);
+		}
+
+		private static List<string> ReverseAndClone(List<string> toReverseAndClone)
+		{
+			var toReturn = toReverseAndClone.ToList();
+			toReturn.Reverse();
+			return toReturn;
+		}
+
+		public static void ClearBobsBuddyEvents() => BobsBuddyEvents.Clear();
 
 		private class BobsBuddyData
 		{

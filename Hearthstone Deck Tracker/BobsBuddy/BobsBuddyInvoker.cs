@@ -16,6 +16,7 @@ using static HearthDb.CardIds;
 using static Hearthstone_Deck_Tracker.BobsBuddy.BobsBuddyUtils;
 using BobsBuddy.Simulation;
 using System.Windows.Forms.VisualStyles;
+using System.Text.RegularExpressions;
 
 namespace Hearthstone_Deck_Tracker.BobsBuddy
 {
@@ -24,23 +25,31 @@ namespace Hearthstone_Deck_Tracker.BobsBuddy
 		private const int Iterations = 10_000;
 		private const int StateChangeDelay = 500;
 		private const int HeroPowerTriggerTimeout = 5000;
+		private const int MaxTime = 1_500;
+		private const int MaxTimeForComplexBoards = 3_000;
+		private const int MinimumSimulationsToReportSentry = 2500;
+
 		internal static int ThreadCount => Environment.ProcessorCount / 2;
 
 		private readonly GameV2 _game;
 		private readonly Random _rnd = new Random();
 
 		private static BobsBuddyPanel BobsBuddyDisplay => Core.Overlay.BobsBuddyDisplay;
+		private static bool ReportErrors => RemoteConfig.Instance.Data?.BobsBuddy?.SentryReporting ?? false;
 
 		private Entity _attackingHero;
 		private Entity _defendingHero;
 		private TestOutput _output;
 		private TestInput _input;
 		private int _turn;
-		private readonly List<string> _debugLog = new List<string>();
+		const int LogLinesKept = 100;
+		private static List<string> _recentHDTLog = new List<string>();
 
 		private MinionHeroPowerTrigger _minionHeroPowerTrigger;
 		private static Guid _currentGameId;
 		private static readonly Dictionary<string, BobsBuddyInvoker> _instances = new Dictionary<string, BobsBuddyInvoker>();
+		private static readonly Regex _debuglineToIgnore = new Regex(@"\|(Player|Opponent|TagChangeActions)\.");
+
 
 		public static BobsBuddyInvoker GetInstance(Guid gameId, int turn)
 		{
@@ -63,10 +72,24 @@ namespace Hearthstone_Deck_Tracker.BobsBuddy
 		public void DebugLog(string msg, [CallerMemberName] string memberName = "", [CallerFilePath] string sourceFilePath = "")
 		{
 			Log.Info(msg, memberName, sourceFilePath);
-			_debugLog.Add($"{DateTime.Now.ToLongTimeString()}|{memberName} >> {msg}");
 		}
 
 		private readonly string _instanceKey;
+
+		static BobsBuddyInvoker()
+		{
+			Log.OnLogLine += AddHDTLogLine;
+		}
+
+		static void AddHDTLogLine(string toLog)
+		{
+			if(_debuglineToIgnore.IsMatch(toLog))
+				return;
+			if(_recentHDTLog.Count >= LogLinesKept)
+				_recentHDTLog.RemoveAt(0);
+			_recentHDTLog.Add(toLog);
+		}
+
 		private BobsBuddyInvoker(string key)
 		{
 			_game = Core.Game;
@@ -88,7 +111,7 @@ namespace Hearthstone_Deck_Tracker.BobsBuddy
 
 		public bool ShouldRun()
 		{
-			if(!Config.Instance.RunBobsBuddy || _game.CurrentGameMode != GameMode.Battlegrounds)
+			if(!Config.Instance.RunBobsBuddy || !_game.IsBattlegroundsMatch)
 				return false;
 			if(RemoteConfig.Instance.Data?.BobsBuddy?.Disabled ?? false)
 				return false;
@@ -157,7 +180,6 @@ namespace Hearthstone_Deck_Tracker.BobsBuddy
 					{
 						DebugLog($"Found no hero power trigger after {duration}ms. Resetting receivedHeroPower on {minion.minionName}");
 						minion.receivesLichKingPower = false;
-						minion.receivesPutricidePower = false;
 					}
 					else
 						DebugLog($"Found hero power trigger for {minion.minionName} after {duration}ms");
@@ -193,6 +215,8 @@ namespace Hearthstone_Deck_Tracker.BobsBuddy
 			{
 				DebugLog(e.ToString());
 				Log.Error(e);
+				if(ReportErrors)
+					Sentry.CaptureBobsBuddyException(e, _input, _turn, _recentHDTLog);
 				return;
 			}
 		}
@@ -224,6 +248,8 @@ namespace Hearthstone_Deck_Tracker.BobsBuddy
 			{
 				DebugLog(e.ToString());
 				Log.Error(e);
+				if(ReportErrors)
+					Sentry.CaptureBobsBuddyException(e, _input, _turn, _recentHDTLog);
 				return;
 			}
 		}
@@ -267,6 +293,8 @@ namespace Hearthstone_Deck_Tracker.BobsBuddy
 				return;
 			}
 
+			input.availableRaces = BattlegroundsUtils.GetAvailableRaces(_currentGameId).ToList();
+
 			var oppHero = _game.Opponent.Board.FirstOrDefault(x => x.IsHero);
 			var playerHero = _game.Player.Board.FirstOrDefault(x => x.IsHero);
 			if(oppHero == null || playerHero == null)
@@ -294,16 +322,14 @@ namespace Hearthstone_Deck_Tracker.BobsBuddy
 			input.SetupSecretsFromDbfidList(_game.Player.Secrets.Select(x => x.Card.DbfIf).ToList());
 
 			foreach(var m in GetOrderedMinions(_game.Player.Board).Select(e => GetMinionFromEntity(e, GetAttachedEntities(e.Id))))
-				m.AddToBackOfList(input.mySide, simulator);
+				m.AddToBackOfList(input.playerSide, simulator);
 
 			foreach(var m in GetOrderedMinions(_game.Opponent.Board).Select(e => GetMinionFromEntity(e, GetAttachedEntities(e.Id))))
 			{
-				m.AddToBackOfList(input.theirSide, simulator);
+				m.AddToBackOfList(input.opponentSide, simulator);
 
 				if(m.receivesLichKingPower)
 					_minionHeroPowerTrigger = new MinionHeroPowerTrigger(m, RebornRite);
-				else if(m.receivesPutricidePower)
-					_minionHeroPowerTrigger = new MinionHeroPowerTrigger(m, RagePotion);
 			}
 
 			_input = input;
@@ -330,11 +356,11 @@ namespace Hearthstone_Deck_Tracker.BobsBuddy
 			{
 				DebugLog("----- Simulation Input -----");
 				DebugLog($"Player: heroPower={_input.playerPowerID}, used={_input.heroPowerInfo?.PlayerActivatedPower}");
-				foreach(var minion in _input.mySide)
+				foreach(var minion in _input.playerSide)
 					DebugLog(minion.ToString());
 
 				DebugLog($"Opponent: heroPower={_input.opponentPowerID}, used={_input.heroPowerInfo?.OpponentActivatedPower}");
-				foreach(var minion in _input.theirSide)
+				foreach(var minion in _input.opponentSide)
 					DebugLog(minion.ToString());
 
 				if(_input.secretsAndPriorities.Count() > 0)
@@ -348,7 +374,10 @@ namespace Hearthstone_Deck_Tracker.BobsBuddy
 				DebugLog($"Running simulations with MaxIterations={Iterations} and ThreadCount={ThreadCount}...");
 
 				var start = DateTime.Now;
-				_output = await new SimulationRunner().SimulateMultiThreaded(_input, Iterations, ThreadCount);
+
+				int timeAlloted = _input.playerSide.Count >= 6 || _input.opponentSide.Count >= 6 ? MaxTimeForComplexBoards : MaxTime;
+				_output = await new SimulationRunner().SimulateMultiThreaded(_input, Iterations, ThreadCount, timeAlloted);
+
 				DebugLog("----- Simulation Output -----");
 				DebugLog($"Duration={(DateTime.Now - start).TotalMilliseconds}ms, " +
 					$"ExitCondition={_output.myExitCondition}, " +
@@ -373,6 +402,8 @@ namespace Hearthstone_Deck_Tracker.BobsBuddy
 			{
 				DebugLog(e.ToString());
 				Log.Error(e);
+				if(ReportErrors)
+					Sentry.CaptureBobsBuddyException(e, _input, _turn, _recentHDTLog);
 				return null;
 			}
 		}
@@ -418,14 +449,19 @@ namespace Hearthstone_Deck_Tracker.BobsBuddy
 				return;
 			}
 
-			var metricSampling = RemoteConfig.Instance.Data?.BobsBuddy?.MetricSampling ?? 0;
-			var reportErrors = RemoteConfig.Instance.Data?.BobsBuddy?.SentryReporting ?? false;
-
-			DebugLog($"metricSampling={metricSampling}, reportErrors={reportErrors}");
-
-			if(!reportErrors && metricSampling == 0)
+			if(_output.simulationCount < MinimumSimulationsToReportSentry)
 			{
-				DebugLog("Nothign to report. Exiting.");
+				DebugLog("Did not complete enough simulations to report terminal cases. Exiting.");
+				return;
+			}
+
+			var metricSampling = RemoteConfig.Instance.Data?.BobsBuddy?.MetricSampling ?? 0;
+
+			DebugLog($"metricSampling={metricSampling}, reportErrors={ReportErrors}");
+
+			if(!ReportErrors && metricSampling == 0)
+			{
+				DebugLog("Nothing to report. Exiting.");
 				return;
 			}
 
@@ -434,16 +470,22 @@ namespace Hearthstone_Deck_Tracker.BobsBuddy
 
 			DebugLog($"result={result}, lethalResult={lethalResult}");
 
-			if(metricSampling > 0 && _rnd.NextDouble() < metricSampling)
-				Influx.OnBobsBuddySimulationCompleted(result, _output, _turn);
-
-			if(reportErrors)
+			var terminalCase = false;
+			if (IsIncorrectCombatResult(result))
 			{
-				if(IsIncorrectCombatResult(result))
+				terminalCase = true;
+				if (ReportErrors)
 					AlertWithLastInputOutput(result.ToString());
-				if(IsIncorrectLethalResult(lethalResult) && !OpposingKelThuzadDied(lethalResult))
+			}
+			if(IsIncorrectLethalResult(lethalResult) && !OpposingKelThuzadDied(lethalResult))
+			{
+				terminalCase = true;
+				if (ReportErrors)
 					AlertWithLastInputOutput(lethalResult.ToString());
 			}
+
+			if (metricSampling > 0 && _rnd.NextDouble() < metricSampling)
+				Influx.OnBobsBuddySimulationCompleted(result, _output, _turn, terminalCase);
 		}
 
 		private bool IsIncorrectCombatResult(CombatResult result)
@@ -462,7 +504,7 @@ namespace Hearthstone_Deck_Tracker.BobsBuddy
 		{
 			DebugLog($"Queueing alert... (valid input: {_input != null})");
 			if(_input != null)
-				Sentry.QueueBobsBuddyTerminalCase(_input, _output, result, _turn, _debugLog);
+				Sentry.QueueBobsBuddyTerminalCase(_input, _output, result, _turn, _recentHDTLog);
 		}
 	}
 }

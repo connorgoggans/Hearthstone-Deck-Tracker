@@ -1,3 +1,88 @@
+## **Release v1.12.14 - 2020-07-08**
+
+**Bob's Buddy**:
+- Fixed an issue where Khadgar paired with a Scallywag would summon too few Sky Pirates.
+
+
+## **Release v1.12.13 - 2020-07-02**
+
+**Bob's Buddy**:
+- Fixed an issue where King Bagurgle triggered by Monstrous Macaw would buff itself.
+- Fixed an issue where duplicate Hero Powers would not stack (e.g. Deathwing vs Sir Finnley).
+- Fixed an issue where Deflect-o-Bot Divine Shield trigger did not correctly interact with Deathrattles.
+- Updated Khadgar to be able to duplicate minions with Reborn (this was a server-side change by Blizzard).
+
+
+## **Release v1.12.12 - 2020-06-18**
+**Updated for Hearthstone 17.4.1.51510**
+
+**Fixes**:
+ - Fixed an issue where Zoobot might get duplicated in the minions list in Battlegrounds games without Mechs.
+
+**Bob's Buddy**:
+- Fixed an issue where Bob's Buddy was not working when spectating Battlegrounds games.
+- Fixed more issues related to auras that increase health.
+
+
+## **Release v1.12.11 - 2020-06-15**
+
+**Fixes**:
+- Fixed an issue where Zoobot would not show up in the Minions list in Battlegrounds games without Mechs.
+
+**Bob's Buddy**:
+- Fixed an issue with the interaction between Illidans Hero Power and Arcane Canon.
+- Random summons are now restricted to the tribes available during the game.
+- Fixed an issue where auras that increase health were not correctly removed.
+
+
+## **Release v1.12.10 - 2020-06-13**
+
+**Bob's Buddy**:
+- Fixed an issue with the interaction between Scallywag and Monstrous Macaw.
+- Fixed an issue where Arcane Canon would sometimes not detect its neighbouring minions correctly.
+- Fixed an issue where Khadgar would not correctly work with The Beast's Deathrattle.
+
+
+## **Release v1.12.9 - 2020-06-11**
+
+**Bob's Buddy**:
+- Fixed an issue with the attack timing for Skallywag's Deathrattle and Arcane Canon.
+- Fixed an issue with resolving multiple Deathrattles at once.
+
+
+## **Release v1.12.8 - 2020-06-09**
+**Updated for Hearthstone 17.4.0.49534**
+
+**Changes**:
+- The minion list in Battlegrounds games will now only show races available in the current game.
+
+**Bob's Buddy**:
+- Added initial support for all new minions added in this Hearthstone patch (Pirates).
+- Fixed various minor issues related to Kangor's Apprentice's Deathrattle.
+- Fixed an issue where Siegebreaker's aura wasn't working correctly.
+
+
+## **Release v1.12.7 - 2020-06-03**
+
+**Bob's Buddy**:
+- Fixed an issue where multiple Deathrattles triggering simultaneously would sometimes not resolve correctly (e.g. in Exodia builds).
+- Fixed an issue where Professor Putricide's Hero Power was applied twice in some cases.
+- Fixed an issue where Mal'Ganis' aura was sometimes not applied correctly.
+
+
+## **Release v1.12.6 - 2020-05-25**
+
+**New**:
+- Opponent hand icons now display the card they have been created by.
+
+**Fixes**:
+- Fixed an issue causing high GPU usage during Battlegrounds games.
+
+**Bob's Buddy**:
+- Increased the maximum amount of time simulations are allowed to run for complex boards.
+- Fixed an issue where Reborn minions could trigger effects on themselves.
+
+
 ## **Release v1.12.5 - 2020-05-20**
 
 **Fixes**:

@@ -25,15 +25,16 @@ namespace Hearthstone_Deck_Tracker.Controls.Overlay
 		private void BgTier_MouseUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
 		{
 			var tier = ((BattlegroundsTier)sender).Tier;
-			Update(tier == ActiveTier ? 0 : tier);
+			var races = BattlegroundsUtils.GetAvailableRaces(Core.Game.CurrentGameStats?.GameId) ?? _db.Value.Races;
+			Update(tier == ActiveTier ? 0 : tier, races);
 		}
 
 		public void Reset()
 		{
-			Update(0);
+			Update(0, _db.Value.Races);
 		}
 
-		private bool AddOrUpdateBgCardGroup(string title, List<Hearthstone.Card> cards)
+		private bool AddOrUpdateBgCardGroup(string title, List<Hearthstone.Card> cards, bool available)
 		{
 			var addedNew = false;
 			var existing = Groups.FirstOrDefault(x => x.Title == title);
@@ -46,11 +47,21 @@ namespace Hearthstone_Deck_Tracker.Controls.Overlay
 			var sortedCards = cards
 				.OrderBy(x => x.LocalizedName)
 				.ToList();
-			existing.UpdateCards(sortedCards);
+			existing.UpdateCards(sortedCards, available);
 			return addedNew;
 		}
 
-		private void Update(int tier)
+		private static readonly List<Hearthstone.Card> NeutralClassifiedRaceCards = new List<Hearthstone.Card>()
+		{
+			Database.GetCardFromId(HearthDb.CardIds.Collectible.Neutral.Zoobot)
+		};
+
+		private IEnumerable<Hearthstone.Card> GetUnavailableRaceCards(IEnumerable<Race> availableRaces)
+		{
+			return NeutralClassifiedRaceCards.Where(x => x.RaceEnum != null && !availableRaces.Contains(x.RaceEnum.Value)).ToList();
+		}
+
+		private void Update(int tier, IEnumerable<Race> availableRaces)
 		{
 			if (ActiveTier == tier)
 				return;
@@ -68,20 +79,28 @@ namespace Hearthstone_Deck_Tracker.Controls.Overlay
 				_tierIcons[i].SetFaded(i != tier - 1);
 
 			var resort = false;
+			
 			foreach(var race in _db.Value.Races)
 			{
 				var title = race == Race.INVALID ? "Other" : HearthDbConverter.RaceConverter(race);
-				var cards = _db.Value.GetCards(tier, race);
+
+				var cards = _db.Value.GetCards(tier, race).ToList();
+
+				if(race == Race.INVALID)
+					cards.AddRange(GetUnavailableRaceCards(availableRaces).Where(x => x.TechLevel == tier));
 				if(cards.Count == 0)
 					Groups.FirstOrDefault(x => x.Title == title)?.Hide();
 				else
-					resort |= AddOrUpdateBgCardGroup(title, cards);
+				{
+					var available = race == Race.ALL || race == Race.INVALID || availableRaces.Contains(race);
+					resort |= AddOrUpdateBgCardGroup(title, cards, available);
+				}
 			}
 
 			if (resort)
 			{
 				var items = Groups.ToList()
-					.OrderBy(x => string.IsNullOrEmpty(x.Title))
+					.OrderBy(x => string.IsNullOrEmpty(x.Title) || x.Title == "Other")
 					.ThenBy(x => x.Title);
 				foreach(var item in items)
 				{
