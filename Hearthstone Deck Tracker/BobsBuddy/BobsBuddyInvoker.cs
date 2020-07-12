@@ -389,11 +389,6 @@ namespace Hearthstone_Deck_Tracker.BobsBuddy
 					$"(Lethal={_output.myDeathRate * 100}%)" +
 					$"(MedianDamage={_output.medianDamage})");
 
-				List<double> damages = _output.results.Select(r => r.avDamage).ToList<double>();
-				damages.Sort();
-
-				DebugLog(damages.ToString());
-
 				DebugLog("----- End of Output -----");
 
 				return _output;
